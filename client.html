@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WUSTL Chat</title>
+  <style type="text/css">
+  #rooms_section {float: left; width: 20%; height: 95vh; border: 1px solid black; padding: 10px;}
+  #rooms > * {float: left; width: 100%; text-align: center; margin-top: 10px;}
+  #room_info {float: left; width: 75%; height: 97.5vh; border: 1px solid black;}
+  #outer_chat {width: 75%; float: left;}
+  #chatlog {overflow-y: scroll;}
+  #users_section {width: 24%; float: left; height: 100%; text-align: center;}
+  #room_users {border: 1px solid black; height: 70vh;}
+  #room_users > button {float: left; width: 100%;}
+  #ban_div { position: fixed; width: 200px; height: 200px; top: 30vh; left: 38%; z-index: 9999; background-color: rgba(255, 255, 255, 0.9); border-radius: 10px; padding: 20px; border: 1px black solid}
+  #ban_div > p {width: 200px;}
+  #ban_close {float: right; height: 16px; width: 16px; border: 1px solid black; border-radius: 10px; text-align: center; line-height: 14px;}
+  #ban_title {text-align: center; margin-bottom: 5px;}
+  #tempban, #permban {width: 120px; margin: 0 40px;}
+  .privateMessage {color: red;}
+  </style>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.4/jquery.min.js"></script>
+  <script type ="text/javascript">
+  var currentClientRoom = "";
+  var clientUsername = "";
+  var socketio = io.connect();
+  $(function() {
+  // hide when the website first loads
+    $("#ban_div").hide();
+  });
+  addUser();
+  // switch rooms
+  function switchRooms(room){
+    $("#chatlog").empty();
+    socketio.emit("switchRooms", room);
+  }
+  // invite someone to your current room
+  function inviteToRoom(){
+    var user = prompt("Please enter a user name containing only letters and numbers");
+    $userOk = false;
+    var userRegex = /^[a-zA-Z0-9]+$/;
+    $userOk = userRegex.test(user);
+    if($userOk === true){
+      socketio.emit("invite_user", user);
+    }
+    else{
+      while($userOk !== true){
+        var user = prompt("INVALID USERNAME: Please enter a user name containing only letters and numbers");
+        $userOk = false;
+        var userRegex = /^[a-zA-Z0-9]+$/;
+        $userOk = userRegex.test(user);
+      }
+      socketio.emit("invite_user", user);
+    }
+  }
+  //  create a room that you are the owner of 
+  function createRoom(){
+    var newRoomName = prompt("Please enter a room name containing only letters and numbers");
+    $roomOk = false;
+    var roomRegex = /^[a-zA-Z0-9]+$/;
+    $roomOk = roomRegex.test(newRoomName);
+    if($roomOk === true && newRoomName != null && newRoomName !== null){
+      var roomPassword = prompt("Optional: password protect your room");
+      if(roomPassword != null && roomPassword !== ""){
+        $("#chatlog").empty();
+        socketio.emit("create_room", newRoomName, roomPassword);
+      }
+      else{
+        $("#chatlog").empty();
+        socketio.emit("create_room", newRoomName, null);
+      }
+    }
+    else{
+      while($roomOk !== true || newRoomName == null || newRoomName === null){
+        var newRoomName = prompt("INVALID ROOM NAME: Please enter a room name containing only letters and numbers");
+        $roomOk = false;
+        var roomRegex = /^[a-zA-Z0-9]+$/;
+        $roomOk = roomRegex.test(newRoomName);
+      }
+      var roomPassword = prompt("Optional: password protect your room");
+      if(roomPassword != null && roomPassword !== ""){
+        socketio.emit("create_room", newRoomName, roomPassword);
+      }
+      else{
+        socketio.emit("create_room", newRoomName, null);
+      }
+    }
+  }
+  // update the room array when someone new joins
+  socketio.on("update_rooms", function(roomsArray, currentRoom){
+    currentClientRoom = currentRoom;
+    $("#rooms").empty();
+    $.each(roomsArray, function(key, value) {
+      if(value == currentRoom){
+        $('#rooms').append('<div>' + value + '</div>');
+      }
+      else {
+        $('#rooms').append('<button id="'+value+'" onclick="switchRooms(\''+value+'\');">' + value + '</button>');
+      }
+    });
+  });
+  // invite someone to join your room
+  socketio.on("invite_to_join", function(username, room){
+    var wantToJoin = confirm("User: " + username + " has invited you to join the room: " + room + ". Would you like to join?");
+    if(wantToJoin == true || wantToJoin === true){
+      $("#chatlog").empty();
+      socketio.emit("switchRooms", room);
+    }
+  });
+  // update the users
+  socketio.on("update_users", function(userArray, isOwner){
+    $("#room_users").empty();
+    if (isOwner == true) {
+      $.each(userArray, function(key, value) {
+        if(value == clientUsername || value === clientUsername){
+          $('#room_users').append('<div>' + value + '</div>');
+        }
+        else{
+          $('#room_users').append('<button id="'+value+'" onclick="userAction(\''+value+'\');">' + value + '</button>');
+        }
+      });
+    }
+    else{
+      $.each(userArray, function(key, value) {
+        $('#room_users').append('<div>' + value + '</div>');
+      });
+    }
+  });
+  socketio.on("message_to_client",function(username, message) {
+         //Append an HR thematic break and the escaped HTML of the new message
+         document.getElementById("chatlog").appendChild(document.createElement("hr"));
+         document.getElementById("chatlog").appendChild(document.createTextNode(username + ": " + message));
+       });
+  socketio.on("private_message_to_client",function(username, message) {
+         //Append an HR thematic break and the escaped HTML of the new message
+         document.getElementById("chatlog").appendChild(document.createElement("hr"));
+         var pvtMsg = document.createElement("div");
+         var txtnd = document.createTextNode(username + ": " + message);
+         pvtMsg.className = 'privateMessage';
+         pvtMsg.appendChild(txtnd);
+         document.getElementById("chatlog").appendChild(pvtMsg);
+       });
+  socketio.on("client_alert",function(message) {
+   if(message != null && message !== null){
+    alert(message);
+  }
+});
+  socketio.on("refresh_chat",function() {
+
+});
+  socketio.on("password_prompt",function(roomName) {
+   if(roomName != null && roomName !== null){
+    var password = prompt("The room " + roomName + " is password protected. Please enter the password:");
+    socketio.emit("client_password", password);
+  }
+});
+// this sends a message
+  function sendMessage(){
+    var msg = document.getElementById("message_input").value;
+    socketio.emit("message_to_server", msg);
+  }
+  // this sends a private message
+  function sendPrivateMessage(){
+    var msg = document.getElementById("message_input").value;
+    var usernames = prompt("Enter the username(s) of the user(s) you would like to message (i.e. Joe,Bob,Ed)");
+    $usersOk = false;
+    $usersRegex = /^[0-9a-zA-Z]+(,[0-9a-zA-Z]+)*$/;
+    $usersOk = $usersRegex.test(usernames);
+    if ($usersOk == true && $usersOk === true && usernames != null && usernames !== "" && msg != null && msg !== "") {
+      socketio.emit("private_message", msg, usernames);
+    }
+    else{
+      if(msg == null || msg === ""){
+        alert("you did not enter a message");
+        return;
+      }
+      while($usersOk != true || $usersOk !== true || usernames == null || usernames === ""){
+        var usernames = prompt("Enter the username(s) of the user(s) you would like to message (i.e. Joe,Bob,Ed)");
+        $usersOk = false;
+        $usersRegex = /^[0-9a-zA-Z]+(,[0-9a-zA-Z]+)*$/;
+        $usersOk = $userRegex.test(usernames);
+      }
+      socketio.emit("private_message", msg, usernames);
+    }
+  }
+  // add a user to the room array
+  function addUser(){
+    var user = prompt("Please enter a user name containing only letters and numbers");
+    $userOk = false;
+    var userRegex = /^[a-zA-Z0-9]+$/;
+    $userOk = userRegex.test(user);
+    if($userOk === true){
+      socketio.emit("add_user", user);
+      clientUsername = user;
+    }
+    else{
+      while($userOk !== true){
+        var user = prompt("INVALID USERNAME: Please enter a user name containing only letters and numbers");
+        $userOk = false;
+        var userRegex = /^[a-zA-Z0-9]+$/;
+        $userOk = userRegex.test(user);
+      }
+      socketio.emit("add_user", user);
+      clientUsername = user;
+    }
+  }
+  // allows the owner of the room to take action against someone currently in the room
+  function userAction(userName){
+    $("#ban_div").show();
+    $("#tempban").click(function(){tempBanUser(userName);});
+    $("#permban").click(function(){permBanUser(userName);});
+    $("#ban_close").click(function(){$("#ban_div").hide();});
+
+  }
+  // temp ban a user
+  function tempBanUser(userName){
+    var checkBan = confirm("Temporarily ban " + userName + " from " + currentClientRoom);
+    if(checkBan == true){
+      $("#ban_div").hide();
+      socketio.emit("tempban", userName);
+    }
+  }
+  // perm ban a user
+  function permBanUser(userName){
+    var checkBan = confirm("Permanently ban " + userName + " from " + currentClientRoom);
+    if(checkBan == true){
+      $("#ban_div").hide();
+      socketio.emit("permban", userName);
+    }
+  }
+
+  </script>
+</head>
+<body>
+  <div id="ban_div">
+    <div id="ban_close">x</div>
+    <h3 id="ban_title">Ban User</h3>
+    <p><input type="Submit" id="tempban" value="Temporarily Ban"></p>
+    <p><input type="Submit" id="permban" value="Permanently Ban"></p>
+    <input type="hidden" id="ban_user" name="username" value="">
+  </div>
+  <div id="rooms_section">
+    <button onclick="createRoom()">Create Room</button>
+    <button onclick="inviteToRoom()">Invite User to Room</button>
+    <div id="rooms"></div>
+  </div>
+  <div id="room_info">
+    <div id="outer_chat">
+      <div id="chatlog"></div>
+      <input type="text" id="message_input"/>
+      <button onclick="sendMessage()">send</button>
+      <button onclick="sendPrivateMessage()">send private message</button>
+    </div>
+    <div id="users_section">
+      <h6>Users in Room:</h6>
+      <div id="room_users">
+      </div>
+    </div>
+  </div>
+</body>
+</html>
